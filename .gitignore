@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Xcode 산출물
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+**/xcuserdata/
+*.xcuserdatad/
+**/*.xcuserdatad/
+**/*.xcworkspace/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+
+# Swift Package Manager
+.swiftpm/
+**/.swiftpm/
+.build/
+
+# 빌드 산출물 archive (재생성 가능, push 안 함)
+builds/
+
+# ML 변환 작업 임시 디렉토리 (venv + 변환 산출물, 큼)
+_tmp/
+
+# Large ML model files — 100MB 초과 가능, LFS 또는 외부 배포
+# Models/README.md 의 다운로드 절차 참고
+*.onnx
+**/*.onnx
+
+# Nested .git (Xcode 26 가 자동 생성, 부모에서 관리)
+code/DuckAR/.git/

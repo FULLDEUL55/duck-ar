@@ -1,0 +1,54 @@
+Metric3D ViT-Small monocular metric depth model
+================================================
+
+Bundled file:      metric3d_vit_small.onnx   (~75.8 MB, fp16)
+Companion license: metric3d_vit_small.LICENSE (BSD-2-Clause, full text)
+
+Sources & attribution
+---------------------
+
+1. Original model weights and training code (BSD-2-Clause)
+   "Metric3D: Towards Zero-shot Metric 3D Prediction from A Single Image"
+   "Metric3Dv2: A Versatile Monocular Geometric Foundation Model"
+   Copyright (c) 2024, Wei Yin and Mu Hu.
+   https://github.com/yvanyin/metric3d
+
+2. ONNX export redistributed by ONNX Community (CC0-1.0, public domain)
+   onnx-community/metric3d-vit-small  on Hugging Face
+   https://huggingface.co/onnx-community/metric3d-vit-small
+
+Required attribution
+--------------------
+
+BSD-2-Clause requires that this NOTICE and the LICENSE file (or equivalent
+copyright notice) ship with the binary. Surface attribution in the app's
+"About / Credits" screen along the lines of:
+
+    Depth estimation: Metric3D ViT-Small
+    © 2024 Wei Yin, Mu Hu — BSD-2-Clause
+    ONNX export: onnx-community (CC0-1.0)
+
+CC0-1.0 imposes no attribution obligation but the courtesy line above is
+recommended.
+
+Inference signature (reference)
+-------------------------------
+
+Input  : pixel_values  [1, 3, H, W]   fp16   raw RGB in [0, 255]
+         H, W must be multiples of 14 (DINOv2 patch size). Use 518 x 518
+         for the recommended canonical operating point.
+
+Outputs: predicted_depth     [1, H', W']        fp16   canonical metric depth (meters)
+         predicted_normal    [1, 3, H', W']     fp16   surface normal (xyz)
+         normal_confidence   [1, H', W']        fp16   normal confidence
+
+where H' = 4 * floor(3.5 * floor(H/14)),  W' analogous.
+
+The model assumes a canonical pinhole camera with focal_length = 1000 px
+and principal point at the image center. Convert to real metric depth by
+scaling with the actual focal length recovered from ARKit:
+
+    d_metric_actual = d_predicted * (fx_arkit / 1000.0)
+
+See docs/research/onnxruntime-ios-integration.md for the full integration
+recipe (preprocessing, ORT session, bbox -> world coord pipeline).
