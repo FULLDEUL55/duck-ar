@@ -77,7 +77,7 @@ duck-ar/
 │   └── research/         ← ar-researcher 보고서
 ├── assets/               ← USDZ, 텍스처, 애니메이션 클립 소스
 └── .Codex/
-    ├── settings.json     ← 모델 (Opus 4.7)
+    ├── settings.json     ← 모델 (Opus 4.8)
     └── agents/           ← 도메인 서브 에이전트 5명
         ├── xcode-builder.md
         ├── arkit-perception.md
@@ -106,7 +106,7 @@ duck-ar/
 - **세션 시작**: `state.md` 읽기 + `../.inbox/Duck-Head/` 확인 → 활성 task 이어가기
 - **세션 중**: 비가역 작업 전 항상 확인
 - **세션 끝**: `state.md` 갱신 (Active Tasks / Recent Decisions / Blockers / Next Session Should). 장기 이력은 `complete.md` 또는 git log.
-- **기본 모델**: **Codex Opus 최신** (`Codex-opus-4-7`)
+- **기본 모델**: **Codex Opus 최신** (`Codex-opus-4-8`)
 
 ---
 

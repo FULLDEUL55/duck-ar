@@ -1,5 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "_comment": "duck-ar (L3) — 프로젝트 특화 설정. L2 (/Users/fulld/dev/.claude/settings.json) 상속.",
-  "model": "claude-opus-4-7"
+  "model": "claude-opus-4-8"
 }
