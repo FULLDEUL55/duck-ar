@@ -27,7 +27,12 @@ struct DuckMotionConfig {
     var rotationSpeed: Float = 2.5
     var idleRotationSpeed: Float = 1.5
     var arrivalThreshold: Float = 0.05
-    var forwardAxisOffset: Float = 0          // USDZ mesh-forward correction
+    // duck.usdz mesh faces local -Z, opposite RealityKit's +Z forward, so the
+    // body rendered "backward" relative to motion. π re-aligns facing with the
+    // travel direction. Applied wherever a movement direction becomes a yaw
+    // (navigateToward + DuckEntityCoordinator spawn); relative idle/arrival
+    // look-around deltas read the live orientation and need no offset.
+    var forwardAxisOffset: Float = .pi        // USDZ mesh-forward correction
 
     // Ease-in / ease-out around the walk
     var accelDuration: TimeInterval = 0.5
