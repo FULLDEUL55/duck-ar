@@ -1,76 +1,52 @@
 # Duck-Head — Current State
 
-_Last updated: 2026-05-27 / Apple Developer Program 보류 → Free Apple ID 로 시작_
+_Last updated: 2026-05-29 / Metric3D depth 파이프라인 통합 완료 (ORT 경로)_
 
-## Active Tasks (Phase 1 Semantic Demo)
+## Active Tasks
 
-- [x] Apple Developer Program 가입 — **보류** (Phase 1 동안 불필요, 무료 Apple ID 로 충분)
-- [x] **사용자 액션**: Xcode → Settings → Accounts → Apple ID 추가 (Free 계정) — 완료
-- [x] Xcode 버전 확인 — **Xcode 26.5 / iOS SDK 26.5** (요구치 15+ 크게 상회)
-- [x] **사용자 액션**: iPad Air 5 USB-C 케이블 연결 + 신뢰 — iPad13,16 인식 OK
-- [x] `code/DuckAR.xcodeproj` 부트스트랩 (SwiftUI App 템플릿, Bundle: `com.fulldeul.DuckAR`, Team: `4BB378R83H` Personal)
-- [x] `INFOPLIST_KEY_NSCameraUsageDescription` 추가 (project.pbxproj)
-- [x] `ContentView.swift` — RealityKit `ARView` + `ARWorldTrackingConfiguration` + plane detection + debug 시각화
-- [x] iPad Air 5 실기 빌드 성공 (`xcodebuild build ... -allowProvisioningUpdates`)
-- [x] iPad Air 5 실기 설치 성공 (`xcrun devicectl device install app`)
-- [x] **사용자 액션**: iPad 인증서 신뢰 완료
-- [x] **Phase 1 베이스라인 동작 확인** — 카메라 영상 + horizontal/vertical plane 감지 + world origin + environment texturing + person segmentation 모두 정상
-- [ ] 오리 USDZ 모델 소스 확보 (무료 / 자체 제작) → 사용자 결정 필요
-- [ ] Core ML 사물 분류 모델 후보 평가 (YOLOv8n / MobileNetV3 / Apple 사전훈련) → **`ar-researcher` 리서치 → Duck-Head 결정 → `arkit-perception` 통합**
-- [ ] 오리 USDZ 무료 소스 탐색 (Sketchfab CC0 / Apple AR Quick Look / Poly Pizza) → `ar-researcher`
-- [ ] semantic 인식 → 캐릭터 행동 1개 프로토타입 (의자→앉기) → `duck-behavior`
+- [x] Phase 1 베이스라인 — ARKit world tracking + plane detection + debug 시각화 (iPad 실기 확인됨)
+- [x] 오리 USDZ 확보 — `assets/duck.usdz` (Sketchfab wisdom3D, **CC-BY 4.0, 크레딧 필수**)
+- [x] Core ML 사물 분류 — YOLOv3 Tiny VNCoreMLRequest (COCO 가구류 keep list)
+- [x] 자연스러운 오리 이동/회전 — DuckNavigator alignment-gated smoothstep, turn-first, mallard waddle
+- [x] **Metric3D Small depth — ONNX Runtime iOS** (CoreML 변환 차단 우회). DepthFrame(미터) publish
+- [x] 사물 거리 정밀도 — bbox 중심 metric depth → worldTransform
+- [x] Mesh-level occlusion — depth 역투영 occlusion proxy mesh (오리가 사물 뒤로 가려짐)
+- [x] depth 기반 내비 공간 확장 — DepthNavigationField
+- [ ] **GitHub repo 생성 + push** — 사용자가 github.com/new 에서 빈 `duck-ar` repo 생성 후 push (remote 이미 설정)
+- [ ] iPad 실기 검증 — builds/ 아카이브들을 사용자 검토 시점에 하나씩 설치/확인
+- [ ] depth 정확도/스케일 실측 튜닝 (실기 검증 후)
 
-## Recent Decisions (last 7 days)
+## Recent Decisions
 
-- 2026-05-27: **스택 확정** — Swift + Xcode + ARKit + RealityKit + Apple Vision + Core ML 네이티브
-- 2026-05-27: **디바이스 확정** — iPad Air 5 (M1, LiDAR 없음, 후면 광각 1개). Scene Reconstruction 불가.
-- 2026-05-27: **Phase 1 = semantic 우선** — 사물 분류 → 캐릭터 행동 매핑. mesh-level occlusion 은 Phase 2.
-- 2026-05-27: **Phase 2 depth 전략** — monocular ML depth (Apple Depth Pro / DepthAnything-v2 small) Core ML 변환 후 검토.
-- 2026-05-27: **확장 로드맵** — iPad Air 5 (Phase 1) → iPhone (Phase 2) → Android (Phase 3, Unity AR Foundation 재설계 검토)
-- 2026-05-27: **도메인 서브 에이전트 4명 정의** — xcode-builder / arkit-perception / realitykit-scene / duck-behavior
-- 2026-05-27: **Apple Developer Program 가입 보류** — Phase 1 (semantic 데모) 은 무료 Apple ID 로 충분. 7일 재서명 부담만 감수. TestFlight / App Store 필요 시점에 ₩129,000/년 결제 재검토.
-- 2026-05-27: **Xcode 환경 확인** — Xcode 26.5 / iOS SDK 26.5 / Swift 6 설치 완료. Free Apple ID Xcode 로그인 완료.
-- 2026-05-27: **Xcode 26 ARKit 템플릿 변경 인지** — "Augmented Reality App" 별도 템플릿 제거됨. 일반 iOS App 템플릿 + ARKit/RealityKit import 방식으로 부트스트랩 예정.
-- 2026-05-27: **5번째 서브 에이전트 추가** — `ar-researcher` (리서치 전담). 코드 수정 없이 모델 후보·USDZ 소스·API 동향 탐색 후 `docs/research/*.md` 보고서 생성. 도구 셋에 WebFetch / WebSearch 포함.
-- 2026-05-26: 프로젝트 부트스트랩 — Duck-Head 페르소나 정의
-- 2026-05-26: 시작 캐릭터 = 오리 (mallard duck). 후일 변경 가능
+- 2026-05-29: **Metric3D = ONNX Runtime iOS 경로** — CoreML 변환이 ViT multi-head attention rank-7 reshape(CoreML rank<=5)로 차단. ORT framework 1.24.2 arm64 임베드. SPM 모듈명 `OnnxRuntimeBindings`.
+- 2026-05-29: **액션 = 이동만** — 앉기/쪼기 없음 (사용자 지시). 오리는 인식 사물 쪽으로 자연 이동.
+- 2026-05-29: **iPad 실기 검증 보류 정책** — 빌드는 여러 개 builds/<tag>/ 로 아카이브해두고, 사용자가 검증 가능할 때 하나씩 검토.
+- 2026-05-27: 스택/디바이스/Phase 전략 확정 (complete.md 참조).
+
+## Build Archives (iPad 실기 검토 대기)
+
+- `builds/task1-onnx-bundle-20260529/` — onnx 번들 포함 베이스
+- `builds/task1-ort-linked-20260529-1125/` — ORT 심볼 링크 검증
+- `builds/depth-pipeline-integrated-20260529-1129/` — depth 추론+occlusion+motion 통합 (258M)
+- `builds/depth-occlusion-navi-*` — 최종 (occlusion 실 depth 소비 + navi field)
 
 ## Blockers
 
-- Apple Developer 계정 상태 확인 필요 (실기 배포 vs 시뮬레이터만)
-- Xcode 설치/버전 미확인
-- 오리 USDZ 에셋 소스 미정
+- GitHub `FULLDEUL55/duck-ar` repo 미생성 (gh CLI/PAT 없음 → 사용자 1회 액션 필요). 생성 후 `git push -u origin main`.
+- depth 스케일/정확도는 실기 검증 전까지 미실측.
 
 ## Team (Active)
 
-- 팀 `duck-ar` (config: `~/.claude/teams/duck-ar/config.json`) — 멤버 5명
-- 완료 task: #1 #2 (ar-researcher), #3 #7 (duck-behavior), #4 #6 (arkit-perception)
-- 대기: #5 (USDZ 결정 + 사용자 배치 후 → realitykit-scene)
-- idle: 5명 전원
-
-## ar-researcher 추천 결과 (2026-05-27)
-
-- **USDZ 1순위**: Sketchfab `Lowpoly Duck (animated)` by wisdom3D — CC-BY 4.0, 652 tri, walk cycle 임베디드. GLB → Reality Converter 로 USDZ 변환 필요. **사용자 직접 검토 후 결정 보류 중**. 보고서: `docs/research/duck-usdz-sources.md`
-- **Core ML 채택**: Apple 내장 `VNClassifyImageRequest` (라이선스 zero, 1000+ classes). Ultralytics YOLOv8n 은 AGPL-3.0 라 상용 배포 보류. 보고서: `docs/research/coreml-object-detection.md`
+- 팀 `duck-ar` (config: `~/.claude/teams/duck-ar/config.json`) — 멤버 5명 (lead Duck-Head + 4 구현 + ar-researcher 온디맨드)
+- 완료 task: #1 (xcode-builder) #2 (arkit-perception) #3 (realitykit-scene) #4 (duck-behavior)
+- 전원 idle.
 
 ## Next Session Should
 
-1. `ar-researcher` 에 위임: 오리 USDZ 무료 소스 비교 (Sketchfab CC0 / Apple AR Quick Look 갤러리 / Poly Pizza) → `docs/research/duck-usdz-sources.md`
-2. Duck-Head 후보 선택 → 에셋 다운로드 → `assets/` 에 보관
-3. `realitykit-scene` 에 위임: 오리 Entity 로드 + 첫 감지된 horizontal plane 위에 배치 + idle 애니메이션
-4. `ar-researcher` 에 위임: Core ML 사물 분류 모델 비교 (YOLOv8n / MobileNetV3 / Apple `MLImageClassifier`) → `docs/research/coreml-object-detection.md`
-5. (병렬) `duck-behavior` 에 위임: `DuckState` enum + 기본 상태머신 골격 (Idle / Walking / LookingAround)
+1. GitHub repo 생성 확인되면 `git push -u origin main`.
+2. 사용자 iPad 검증 → builds/ 아카이브 하나씩 설치, depth 동작/오리 자연스러움 피드백 수집.
+3. 피드백 기반 DepthFrame 스케일·occlusion 해상도·DuckMotionConfig 튜닝.
 
 ## Inbox
 
 - 확인: `ls /Users/fulld/dev/.inbox/Duck-Head/`
-
-## 도메인 서브 에이전트 (참조)
-
-| 이름 | 1차 위임 영역 | 영역 |
-|------|---------------|------|
-| xcode-builder | `.xcodeproj`, SPM, signing, 빌드, TestFlight | 구현 |
-| arkit-perception | ARSession, Vision, Core ML 사물 분류 | 구현 |
-| realitykit-scene | USDZ, 머티리얼, 조명, anchor entity | 구현 |
-| duck-behavior | 상태머신, semantic→행동, 애니메이션 블렌딩 | 구현 |
-| ar-researcher | 모델 비교·USDZ 소스 탐색·API 동향·벤치마크 → `docs/research/*.md` | 리서치 |
