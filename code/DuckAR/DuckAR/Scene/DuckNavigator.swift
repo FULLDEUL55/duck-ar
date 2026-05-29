@@ -20,17 +20,21 @@ import RealityKit
 import simd
 
 struct DuckMotionConfig {
-    // Walk
-    var baseSpeed: Float = 0.15
-    var rotationSpeed: Float = 5.0
-    var idleRotationSpeed: Float = 2.0
+    // Walk — a mallard waddle is slow and deliberate.
+    var baseSpeed: Float = 0.18
+    // ~143°/s: brisk enough to re-aim, slow enough to read as a body turn
+    // rather than an instant heading snap.
+    var rotationSpeed: Float = 2.5
+    var idleRotationSpeed: Float = 1.5
     var arrivalThreshold: Float = 0.05
     var forwardAxisOffset: Float = 0          // USDZ mesh-forward correction
 
     // Ease-in / ease-out around the walk
     var accelDuration: TimeInterval = 0.5
-    var decelDuration: TimeInterval = 0.3
-    // Rotate in place when the heading delta exceeds this threshold.
+    var decelDuration: TimeInterval = 0.4
+    // Heading error at/above which forward speed is fully gated to zero (the
+    // duck pivots in place). Below it, forward speed scales smoothly with
+    // alignment so re-aiming blends into walking instead of a hard stop/start.
     var turnFirstThreshold: Float = .pi / 4   // 45°
 
     // Camera-distance driven scale
@@ -178,9 +182,11 @@ final class DuckNavigator {
         let desiredYaw = atan2(direction.x, direction.z) + config.forwardAxisOffset
         let currentYaw = Self.yaw(of: anchor.orientation)
         let yawDelta = Self.shortestAngleDelta(from: currentYaw, to: desiredYaw)
+        let absYaw = abs(yawDelta)
 
-        // Rotate every frame (small or large delta), so heading converges
-        // even while we hold position during the turn-first window.
+        // Rotate every frame toward the target heading. Clamping by maxYawStep
+        // naturally eases the turn out as |yawDelta| drops below one frame's
+        // worth of rotation, so the heading settles rather than overshooting.
         let maxYawStep = config.rotationSpeed * deltaTime
         let yawStep = max(-maxYawStep, min(maxYawStep, yawDelta))
         anchor.orientation = simd_quatf(
@@ -188,8 +194,14 @@ final class DuckNavigator {
             axis: SIMD3<Float>(0, 1, 0)
         )
 
-        // Hold motion until the duck has roughly aimed at the target.
-        if abs(yawDelta) > config.turnFirstThreshold {
+        // Alignment-gated forward speed: 1 when aimed at the target, ramping
+        // smoothly to 0 at turnFirstThreshold (and beyond). This replaces the
+        // old binary hold — large turns pivot in place, moderate turns walk a
+        // gentle arc, and there is no velocity discontinuity at the boundary.
+        let alignment = 1 - smoothstep01(absYaw / config.turnFirstThreshold)
+        if alignment <= 0.001 {
+            // Effectively pivoting in place; pause the accel ramp so the next
+            // step out of the turn eases in from rest.
             motionStartTime = nil
             return
         }
@@ -211,7 +223,7 @@ final class DuckNavigator {
             easeOut = 1.0
         }
 
-        let effectiveSpeed = config.baseSpeed * easeIn * easeOut
+        let effectiveSpeed = config.baseSpeed * easeIn * easeOut * alignment
         let stepLength = min(effectiveSpeed * deltaTime, distance)
         anchor.position = current + direction * stepLength
     }

@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var behavior = DuckBehaviorCoordinator()
     @State private var duckEntity = DuckEntityCoordinator()
     @State private var planeVisualizer = PlaneVisualizer()
+    @State private var depthOcclusion = DepthOcclusionCoordinator()
     @State private var adapter: PerceptionToBehaviorAdapter?
     @State private var stateLog: AnyCancellable?
     @State private var overlayBridge: AnyCancellable?
@@ -29,7 +30,8 @@ struct ContentView: View {
                 perception: perception,
                 duckEntity: duckEntity,
                 behavior: behavior,
-                planeVisualizer: planeVisualizer
+                planeVisualizer: planeVisualizer,
+                depthOcclusion: depthOcclusion
             )
                 .ignoresSafeArea()
             DetectionOverlay(store: overlayStore)
@@ -40,6 +42,7 @@ struct ContentView: View {
             perception.debugLog = debugLog
             planeVisualizer.debugLog = debugLog
             duckEntity.debugLog = debugLog
+            depthOcclusion.debugLog = debugLog
 
             let newAdapter = PerceptionToBehaviorAdapter(behavior: behavior)
             newAdapter.debugLog = debugLog
@@ -75,6 +78,7 @@ struct ARViewContainer: UIViewRepresentable {
     let duckEntity: DuckEntityCoordinator
     let behavior: DuckBehaviorCoordinator
     let planeVisualizer: PlaneVisualizer
+    let depthOcclusion: DepthOcclusionCoordinator
 
     func makeUIView(context: Context) -> ARView {
         let arView = ARView(frame: .zero, cameraMode: .ar, automaticallyConfigureSession: false)
@@ -88,6 +92,10 @@ struct ARViewContainer: UIViewRepresentable {
 
         planeVisualizer.attach(to: arView, planeEvents: perception.planeAnchorEvents)
         duckEntity.attach(to: arView, behavior: behavior)
+        depthOcclusion.attach(
+            to: arView,
+            depthPublisher: perception.depthFramePublisher.eraseToAnyPublisher()
+        )
 
         return arView
     }

@@ -35,9 +35,11 @@ struct PerceivedObject: Sendable, Equatable {
     }
 }
 
-// Output of Metric3D Small (or equivalent monocular depth model).
-// `map` shape/scale TBD by ar-researcher's conversion report; consumers
-// must interpret in concert with the model's documented output spec.
+// Output of Metric3D ViT-Small (monocular metric depth, via ONNX Runtime).
+// `map` is a 2-D MLMultiArray [H', W'] of Float32 depth in METERS, in the
+// portrait-upright frame (same orientation Vision detection uses). `contentRect`
+// marks the non-padded image region inside the map (normalized, origin top-left)
+// because the input is letterboxed into a square — padded borders carry no depth.
 // @unchecked Sendable: MLMultiArray is reference-typed and not Sendable —
 // the value is published once and treated as read-only by subscribers.
 struct DepthFrame: @unchecked Sendable {
@@ -45,6 +47,29 @@ struct DepthFrame: @unchecked Sendable {
     let cameraIntrinsics: simd_float3x3
     let imageResolution: CGSize
     let timestamp: TimeInterval
+    let contentRect: CGRect
+
+    var width: Int { map.shape.count == 2 ? map.shape[1].intValue : 0 }
+    var height: Int { map.shape.count == 2 ? map.shape[0].intValue : 0 }
+
+    /// Metric depth (meters) at a Vision-normalized point (origin lower-left,
+    /// portrait-upright). Returns nil if the point falls in the letterbox
+    /// padding or the map is empty. Samples nearest pixel.
+    func metricDepth(atVisionNormalizedPoint p: CGPoint) -> Float? {
+        let w = width, h = height
+        guard w > 0, h > 0 else { return nil }
+        // Vision lower-left -> depth-map top-left.
+        let nx = p.x
+        let ny = 1.0 - p.y
+        guard contentRect.width > 0, contentRect.height > 0 else { return nil }
+        let cx = (nx - contentRect.minX) / contentRect.width
+        let cy = (ny - contentRect.minY) / contentRect.height
+        guard (0...1).contains(cx), (0...1).contains(cy) else { return nil }
+        let col = min(w - 1, max(0, Int((cx * CGFloat(w - 1)).rounded())))
+        let row = min(h - 1, max(0, Int((cy * CGFloat(h - 1)).rounded())))
+        let value = map[[NSNumber(value: row), NSNumber(value: col)]].floatValue
+        return value.isFinite && value > 0 ? value : nil
+    }
 }
 
 final class PerceptionCoordinator: NSObject, ARSessionDelegate {
@@ -92,9 +117,13 @@ final class PerceptionCoordinator: NSObject, ARSessionDelegate {
     )
     // Built once on `inferenceQueue`, then only ever read on the same serial queue.
     nonisolated(unsafe) private var detectionRequest: VNCoreMLRequest?
-    // Same lifecycle pattern as `detectionRequest`, but bound to `depthInferenceQueue`.
-    // Stays nil until Metric3DSmall.mlmodelc lands in the bundle (Stage 2).
-    nonisolated(unsafe) private var depthRequest: VNCoreMLRequest?
+    // Built once on `depthInferenceQueue`, then only read on the same serial queue.
+    nonisolated(unsafe) private var depthEstimator: Metric3DDepthEstimator?
+
+    // Latest depth result, written on `depthInferenceQueue`, read on main during
+    // detection placement. Guarded by `depthLock`.
+    nonisolated(unsafe) private var latestDepthFrame: DepthFrame?
+    nonisolated private let depthLock = NSLock()
 
     func attach(to arView: ARView) {
         self.arView = arView
@@ -139,21 +168,15 @@ final class PerceptionCoordinator: NSObject, ARSessionDelegate {
     }
 
     nonisolated private func loadDepthEstimator() {
-        guard let url = Bundle.main.url(forResource: "Metric3DSmall", withExtension: "mlmodelc") else {
-            debugLog?.log(.system, "ℹ Metric3DSmall.mlmodelc not bundled — depth pipeline idle")
-            return
-        }
         do {
-            let cfg = MLModelConfiguration()
-            cfg.computeUnits = .all
-            let mlModel = try MLModel(contentsOf: url, configuration: cfg)
-            let visionModel = try VNCoreMLModel(for: mlModel)
-            let request = VNCoreMLRequest(model: visionModel)
-            request.imageCropAndScaleOption = .scaleFill
-            depthRequest = request
-            debugLog?.log(.system, "✅ Metric3D Small loaded")
+            let estimator = try Metric3DDepthEstimator()
+            estimator.warmUp()
+            depthEstimator = estimator
+            debugLog?.log(.system, "✅ Metric3D ViT-Small (ONNX Runtime) loaded")
+        } catch Metric3DDepthEstimator.EstimatorError.modelMissing {
+            debugLog?.log(.system, "ℹ metric3d_vit_small_f32io.onnx not bundled — depth pipeline idle")
         } catch {
-            debugLog?.log(.system, "⚠ Failed to load Metric3D Small: \(error)")
+            debugLog?.log(.system, "⚠ Failed to load Metric3D: \(error)")
         }
     }
 
@@ -272,6 +295,8 @@ final class PerceptionCoordinator: NSObject, ARSessionDelegate {
             distance: Self.placementDistanceMeters
         )
 
+        let depthFrame = currentDepthFrame()
+
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let arView = self.arView else { return }
             for det in detections {
@@ -283,8 +308,29 @@ final class PerceptionCoordinator: NSObject, ARSessionDelegate {
                     y: normalized.y * viewSize.height
                 )
 
+                // Placement priority: metric depth (monocular) > plane raycast > fixed fallback.
+                // Depth gives a distance even where ARKit has found no plane (e.g. a chair
+                // mid-room); we project it along the view ray for that screen point.
                 let world: simd_float4x4
-                if let hit = arView.raycast(
+                if let depthFrame = depthFrame,
+                   let meters = depthFrame.metricDepth(
+                       atVisionNormalizedPoint: CGPoint(x: det.bbox.midX, y: det.bbox.midY)),
+                   meters > 0.2, meters < 8.0,
+                   let ray = arView.ray(through: screenPoint) {
+                    // depth is perpendicular Z; convert to distance along the ray.
+                    let dir = simd_normalize(ray.direction)
+                    let forward = -simd_normalize(SIMD3<Float>(
+                        cameraTransform.columns.2.x,
+                        cameraTransform.columns.2.y,
+                        cameraTransform.columns.2.z
+                    ))
+                    let cosTheta = simd_dot(dir, forward)
+                    let t = cosTheta > 0.1 ? meters / cosTheta : meters
+                    let p = ray.origin + dir * t
+                    var m = matrix_identity_float4x4
+                    m.columns.3 = SIMD4<Float>(p.x, p.y, p.z, 1)
+                    world = m
+                } else if let hit = arView.raycast(
                     from: screenPoint,
                     allowing: .estimatedPlane,
                     alignment: .any
@@ -312,7 +358,7 @@ final class PerceptionCoordinator: NSObject, ARSessionDelegate {
         }
     }
 
-    // MARK: - Depth pipeline (Stage 1 scaffolding; Stage 2 fills in inference)
+    // MARK: - Depth pipeline (Metric3D ViT-Small via ONNX Runtime)
 
     nonisolated private func runDepthEstimation(
         pixelBuffer: CVPixelBuffer,
@@ -325,13 +371,44 @@ final class PerceptionCoordinator: NSObject, ARSessionDelegate {
                 self?.isInferringDepth = false
             }
         }
-        guard depthRequest != nil else { return }
-        // Stage 2 (ar-researcher .mlpackage 도착 후) 채울 내용:
-        //   1. VNImageRequestHandler(cvPixelBuffer: ..., orientation: .right).perform([request])
-        //   2. results 에서 depth MLMultiArray 추출 (모델 출력 키는 변환 보고서 따라)
-        //   3. DepthFrame(map:, cameraIntrinsics: intrinsics, imageResolution:, timestamp:) publish
-        //   4. (옵션) latestDepthFrame 캐시 후 runDetection 측에서 bbox 중심 → metric depth 조회
-        _ = (pixelBuffer, intrinsics, imageResolution, timestamp)
+        guard let estimator = depthEstimator else { return }
+
+        let fx = intrinsics.columns.0.x
+        let output: Metric3DDepthEstimator.Output
+        do {
+            output = try estimator.estimate(pixelBuffer: pixelBuffer, intrinsicsFx: fx)
+        } catch {
+            debugLog?.log(.system, "⚠ depth inference failed: \(error)")
+            return
+        }
+
+        guard let map = try? MLMultiArray(
+            shape: [NSNumber(value: output.height), NSNumber(value: output.width)],
+            dataType: .float32
+        ) else { return }
+        output.depth.withUnsafeBytes { src in
+            memcpy(map.dataPointer, src.baseAddress!, output.depth.count * MemoryLayout<Float>.size)
+        }
+
+        let frame = DepthFrame(
+            map: map,
+            cameraIntrinsics: intrinsics,
+            imageResolution: imageResolution,
+            timestamp: timestamp,
+            contentRect: output.contentRect
+        )
+
+        depthLock.lock()
+        latestDepthFrame = frame
+        depthLock.unlock()
+
+        depthFramePublisher.send(frame)
+    }
+
+    nonisolated private func currentDepthFrame() -> DepthFrame? {
+        depthLock.lock()
+        defer { depthLock.unlock() }
+        return latestDepthFrame
     }
 
     nonisolated private static func placementTransform(
