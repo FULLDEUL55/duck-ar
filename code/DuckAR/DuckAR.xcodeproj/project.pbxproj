@@ -14,9 +14,22 @@
 		1E56F55B2FC6C15000370DA6 /* DuckAR.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DuckAR.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1E56F5700000000000000001 /* Exceptions for "DuckAR" folder in "DuckAR" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				RealityAssets/.gitkeep,
+			);
+			target = 1E56F55A2FC6C15000370DA6 /* DuckAR */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1E56F55D2FC6C15000370DA6 /* DuckAR */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1E56F5700000000000000001 /* Exceptions for "DuckAR" folder in "DuckAR" target */,
+			);
 			path = DuckAR;
 			sourceTree = "<group>";
 		};
