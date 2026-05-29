@@ -12,10 +12,10 @@
 //  the proxy naturally tracks the view. OcclusionMaterial writes depth but not
 //  colour — world-space duck fragments behind it are culled.
 //
-//  STATUS: skeleton. The depth pipeline in PerceptionCoordinator is still a
-//  no-op (Stage 2), so this stays idle until DepthFrames actually publish. The
-//  format/orientation/scale knobs in DepthOcclusionConfig are placeholders
-//  pending arkit-perception confirmation.
+//  STATUS: consumes the confirmed DepthFrame (Depth Anything V2 Small). Stays
+//  idle until DepthAnythingV2SmallF16.mlmodelc is bundled and depth frames
+//  publish. depthScale/depthBias default to identity (frames are metric); the
+//  calibrate() hook stays for on-device residual-scale tuning.
 //
 
 import ARKit
@@ -32,7 +32,7 @@ final class DepthOcclusionCoordinator {
     var config = DepthOcclusionConfig()
 
     // Debug: render the proxy as a translucent surface instead of an invisible
-    // occluder, to eyeball depth alignment while tuning the layout knobs.
+    // occluder, to eyeball depth alignment on device.
     var debugVisualize = false
 
     weak var debugLog: DebugLogStore?
@@ -78,17 +78,17 @@ final class DepthOcclusionCoordinator {
         if !enabled { proxyEntity?.model = nil }
     }
 
-    // Ground-plane scale calibration. Once a stable raycast hit gives a known
-    // metric distance d_world for a pixel whose raw depth is d_raw, set:
-    //   rawScale = d_world / d_raw,  rawBias = 0  (invertDepth handled first).
+    // Residual affine correction for the metric depth (metric = scale·d + bias).
+    // Frames are already metric, so this is identity unless on-device measurement
+    // (raycast hit distance vs sampled depth) reveals drift.
     // TODO(Task #20 PoC): drive this from arkit-perception's raycast + depth
     // sample pairing rather than a manual call.
-    func calibrate(rawScale: Float, rawBias: Float = 0) {
-        config.rawScale = rawScale
-        config.rawBias = rawBias
+    func calibrate(scale: Float, bias: Float = 0) {
+        config.depthScale = scale
+        config.depthBias = bias
         debugLog?.log(
             .system,
-            String(format: "🧱 occlusion calibrated scale=%.4f bias=%.4f", rawScale, rawBias)
+            String(format: "🧱 occlusion calibrated scale=%.4f bias=%.4f", scale, bias)
         )
     }
 

@@ -70,6 +70,9 @@ final class DuckNavigator {
 
     private weak var anchor: AnchorEntity?
     private weak var arView: ARView?
+    // Owned by DuckEntityCoordinator; supplies metric-depth walkability. nil
+    // until depth frames flow — navigation then runs plane-only as before.
+    private var depthField: DepthNavigationField?
     private var groundY: Float = 0
     private var target: SIMD3<Float>?
     private var hasArrived = false
@@ -93,11 +96,13 @@ final class DuckNavigator {
         arView: ARView,
         groundY: Float,
         scene: RealityKit.Scene,
-        targetPublisher: AnyPublisher<SIMD3<Float>?, Never>
+        targetPublisher: AnyPublisher<SIMD3<Float>?, Never>,
+        depthField: DepthNavigationField? = nil
     ) {
         self.anchor = anchor
         self.arView = arView
         self.groundY = groundY
+        self.depthField = depthField
 
         targetSubscription = targetPublisher
             .receive(on: DispatchQueue.main)
@@ -173,7 +178,19 @@ final class DuckNavigator {
         let delta = target - current
         let distance = simd_length(delta)
 
-        if distance < config.arrivalThreshold {
+        // Depth-gated reach: clamp how far the duck may advance toward the
+        // target this frame so it stops in front of real obstacles (and can
+        // still aim at floor between/behind furniture where a plane raycast
+        // found nothing). Fail-open to `distance` when depth is unavailable.
+        let walkable = depthField?.walkableDistance(
+            from: current, to: target, groundY: groundY
+        ) ?? distance
+        let goalDistance = min(distance, walkable)
+
+        if goalDistance < config.arrivalThreshold {
+            if distance > config.arrivalThreshold {
+                debugLog?.log(.nav, "🦆 blocked — stopping short of target")
+            }
             onArrived(anchor: anchor, now: now)
             return
         }
@@ -214,17 +231,18 @@ final class DuckNavigator {
         let elapsed = Float(now - (motionStartTime ?? now))
         let easeIn = smoothstep01(elapsed / Float(config.accelDuration))
 
-        // Ease-out within the last `baseSpeed * decelDuration` meters.
+        // Ease-out within the last `baseSpeed * decelDuration` meters of the
+        // reachable goal (target or depth-clamped stop point).
         let decelDistance = config.baseSpeed * Float(config.decelDuration)
         let easeOut: Float
-        if decelDistance > 0, distance < decelDistance {
-            easeOut = smoothstep01(distance / decelDistance)
+        if decelDistance > 0, goalDistance < decelDistance {
+            easeOut = smoothstep01(goalDistance / decelDistance)
         } else {
             easeOut = 1.0
         }
 
         let effectiveSpeed = config.baseSpeed * easeIn * easeOut * alignment
-        let stepLength = min(effectiveSpeed * deltaTime, distance)
+        let stepLength = min(effectiveSpeed * deltaTime, goalDistance)
         anchor.position = current + direction * stepLength
     }
 

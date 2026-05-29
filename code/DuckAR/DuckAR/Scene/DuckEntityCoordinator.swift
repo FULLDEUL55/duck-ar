@@ -30,13 +30,23 @@ final class DuckEntityCoordinator {
     private var isPlaced = false
 
     private let navigator = DuckNavigator()
+    private let depthField = DepthNavigationField()
 
     weak var debugLog: DebugLogStore? {
-        didSet { navigator.debugLog = debugLog }
+        didSet {
+            navigator.debugLog = debugLog
+            depthField.debugLog = debugLog
+        }
     }
 
-    func attach(to arView: ARView, behavior: DuckBehaviorCoordinator) {
+    func attach(
+        to arView: ARView,
+        behavior: DuckBehaviorCoordinator,
+        depthPublisher: AnyPublisher<DepthFrame, Never>
+    ) {
         guard !isPlaced, planeAnchor == nil else { return }
+
+        depthField.attach(arView: arView, depthPublisher: depthPublisher)
 
         let anchor = AnchorEntity(
             .plane(
@@ -154,7 +164,8 @@ final class DuckEntityCoordinator {
             arView: arView,
             groundY: worldPos.y,
             scene: arView.scene,
-            targetPublisher: behavior.targetPositionPublisher
+            targetPublisher: behavior.targetPositionPublisher,
+            depthField: depthField
         )
     }
 }

@@ -91,7 +91,11 @@ struct ARViewContainer: UIViewRepresentable {
         arView.environment.lighting.intensityExponent = 1.0
 
         planeVisualizer.attach(to: arView, planeEvents: perception.planeAnchorEvents)
-        duckEntity.attach(to: arView, behavior: behavior)
+        duckEntity.attach(
+            to: arView,
+            behavior: behavior,
+            depthPublisher: perception.depthFramePublisher.eraseToAnyPublisher()
+        )
         depthOcclusion.attach(
             to: arView,
             depthPublisher: perception.depthFramePublisher.eraseToAnyPublisher()
