@@ -71,6 +71,12 @@ final class PerceptionToBehaviorAdapter {
         self.config = config
     }
 
+    // Port-based entry point: the adapter depends on the PerceivedObjectSource
+    // abstraction, not the concrete perception backend.
+    func attach(to source: PerceivedObjectSource) {
+        attach(to: source.perceivedObjectsPublisher)
+    }
+
     func attach<P: Publisher>(to publisher: P) where P.Output == PerceivedObject, P.Failure == Never {
         subscription = publisher
             .receive(on: DispatchQueue.main)

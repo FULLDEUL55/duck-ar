@@ -16,7 +16,7 @@ import RealityKit
 import Vision
 import simd
 
-final class PerceptionCoordinator: NSObject, ARSessionDelegate {
+final class PerceptionCoordinator: NSObject, ARSessionDelegate, PerceivedObjectSource {
 
     static let modelName: String = "YOLOv3-Tiny (Apple, COCO 80)"
     static let depthModelName: String = "Metric3D Small"
@@ -41,6 +41,12 @@ final class PerceptionCoordinator: NSObject, ARSessionDelegate {
     nonisolated let perceivedObjects = PassthroughSubject<PerceivedObject, Never>()
     nonisolated let planeAnchorEvents = PassthroughSubject<PlaneAnchorEvent, Never>()
     nonisolated let depthFramePublisher = PassthroughSubject<DepthFrame, Never>()
+
+    // PerceivedObjectSource port. Behavior depends on this protocol, never the
+    // concrete coordinator, so the perception backend stays swappable.
+    nonisolated var perceivedObjectsPublisher: AnyPublisher<PerceivedObject, Never> {
+        perceivedObjects.eraseToAnyPublisher()
+    }
 
     enum PlaneAnchorEvent {
         case added(ARPlaneAnchor)

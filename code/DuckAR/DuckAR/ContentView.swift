@@ -46,7 +46,8 @@ struct ContentView: View {
 
             let newAdapter = PerceptionToBehaviorAdapter(behavior: behavior)
             newAdapter.debugLog = debugLog
-            newAdapter.attach(to: perception.perceivedObjects)
+            // Wire behavior to perception through the PerceivedObjectSource port.
+            newAdapter.attach(to: perception as PerceivedObjectSource)
             behavior.start()
 
             stateLog = behavior.currentStatePublisher.sink { [debugLog] state in
