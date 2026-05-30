@@ -2,9 +2,11 @@
 //  PerceptionCoordinator.swift
 //  DuckAR
 //
-//  ARSession owner. Configures world tracking, owns a reusable
-//  VNCoreMLRequest for Apple's YOLOv3 Tiny detector, and publishes
-//  located objects via Combine.
+//  Perception infrastructure / inbound adapter. Owns the ARSession, runs the
+//  YOLOv3 Tiny detector (Vision) and the Metric3D depth estimator, and
+//  translates raw ARKit/Vision results into pure domain models
+//  (PerceivedObject, DepthFrame — defined in their own files) published via
+//  Combine. All ARKit/Vision/RealityKit types stay confined to this layer.
 //
 
 import ARKit
@@ -14,65 +16,7 @@ import RealityKit
 import Vision
 import simd
 
-struct PerceivedObject: Sendable, Equatable {
-    let type: String
-    let worldTransform: simd_float4x4
-    let confidence: Float
-    let timestamp: TimeInterval
-    // Vision-native: normalized [0,1]², origin lower-left, portrait-upright
-    // (matches the orientation we feed VNImageRequestHandler).
-    let normalizedBoundingBox: CGRect
-
-    // Convert the Vision bbox into UIKit view coordinates (origin upper-left).
-    // Phase 1 sanity mapping: linear scale, no camera-image aspect-crop correction.
-    func screenRect(in viewSize: CGSize) -> CGRect {
-        CGRect(
-            x: normalizedBoundingBox.minX * viewSize.width,
-            y: (1.0 - normalizedBoundingBox.maxY) * viewSize.height,
-            width: normalizedBoundingBox.width * viewSize.width,
-            height: normalizedBoundingBox.height * viewSize.height
-        )
-    }
-}
-
-// Output of Metric3D ViT-Small (monocular metric depth, via ONNX Runtime).
-// `map` is a 2-D MLMultiArray [H', W'] of Float32 depth in METERS, in the
-// portrait-upright frame (same orientation Vision detection uses). `contentRect`
-// marks the non-padded image region inside the map (normalized, origin top-left)
-// because the input is letterboxed into a square — padded borders carry no depth.
-// @unchecked Sendable: MLMultiArray is reference-typed and not Sendable —
-// the value is published once and treated as read-only by subscribers.
-struct DepthFrame: @unchecked Sendable {
-    let map: MLMultiArray
-    let cameraIntrinsics: simd_float3x3
-    let imageResolution: CGSize
-    let timestamp: TimeInterval
-    let contentRect: CGRect
-
-    var width: Int { map.shape.count == 2 ? map.shape[1].intValue : 0 }
-    var height: Int { map.shape.count == 2 ? map.shape[0].intValue : 0 }
-
-    /// Metric depth (meters) at a Vision-normalized point (origin lower-left,
-    /// portrait-upright). Returns nil if the point falls in the letterbox
-    /// padding or the map is empty. Samples nearest pixel.
-    func metricDepth(atVisionNormalizedPoint p: CGPoint) -> Float? {
-        let w = width, h = height
-        guard w > 0, h > 0 else { return nil }
-        // Vision lower-left -> depth-map top-left.
-        let nx = p.x
-        let ny = 1.0 - p.y
-        guard contentRect.width > 0, contentRect.height > 0 else { return nil }
-        let cx = (nx - contentRect.minX) / contentRect.width
-        let cy = (ny - contentRect.minY) / contentRect.height
-        guard (0...1).contains(cx), (0...1).contains(cy) else { return nil }
-        let col = min(w - 1, max(0, Int((cx * CGFloat(w - 1)).rounded())))
-        let row = min(h - 1, max(0, Int((cy * CGFloat(h - 1)).rounded())))
-        let value = map[[NSNumber(value: row), NSNumber(value: col)]].floatValue
-        return value.isFinite && value > 0 ? value : nil
-    }
-}
-
-final class PerceptionCoordinator: NSObject, ARSessionDelegate {
+final class PerceptionCoordinator: NSObject, ARSessionDelegate, PerceivedObjectSource {
 
     static let modelName: String = "YOLOv3-Tiny (Apple, COCO 80)"
     static let depthModelName: String = "Metric3D Small"
@@ -90,9 +34,19 @@ final class PerceptionCoordinator: NSObject, ARSessionDelegate {
         "refrigerator", "oven", "sink",
     ]
 
+    // Domain-model outbound ports (PerceivedObject / DepthFrame carry no
+    // framework types). planeAnchorEvents intentionally keeps ARPlaneAnchor:
+    // its only consumer (PlaneVisualizer) is itself RealityKit infrastructure,
+    // so wrapping it in a domain type would be a value-free passthrough.
     nonisolated let perceivedObjects = PassthroughSubject<PerceivedObject, Never>()
     nonisolated let planeAnchorEvents = PassthroughSubject<PlaneAnchorEvent, Never>()
     nonisolated let depthFramePublisher = PassthroughSubject<DepthFrame, Never>()
+
+    // PerceivedObjectSource port. Behavior depends on this protocol, never the
+    // concrete coordinator, so the perception backend stays swappable.
+    nonisolated var perceivedObjectsPublisher: AnyPublisher<PerceivedObject, Never> {
+        perceivedObjects.eraseToAnyPublisher()
+    }
 
     enum PlaneAnchorEvent {
         case added(ARPlaneAnchor)
@@ -175,6 +129,8 @@ final class PerceptionCoordinator: NSObject, ARSessionDelegate {
             debugLog?.log(.system, "✅ Metric3D ViT-Small (ONNX Runtime) loaded")
         } catch Metric3DDepthEstimator.EstimatorError.modelMissing {
             debugLog?.log(.system, "ℹ metric3d_vit_small_f32io.onnx not bundled — depth pipeline idle")
+        } catch Metric3DDepthEstimator.EstimatorError.sessionFailed(let message) {
+            debugLog?.log(.system, "⚠ Metric3D ORT session failed: \(message)")
         } catch {
             debugLog?.log(.system, "⚠ Failed to load Metric3D: \(error)")
         }
@@ -382,16 +338,10 @@ final class PerceptionCoordinator: NSObject, ARSessionDelegate {
             return
         }
 
-        guard let map = try? MLMultiArray(
-            shape: [NSNumber(value: output.height), NSNumber(value: output.width)],
-            dataType: .float32
-        ) else { return }
-        output.depth.withUnsafeBytes { src in
-            memcpy(map.dataPointer, src.baseAddress!, output.depth.count * MemoryLayout<Float>.size)
-        }
-
         let frame = DepthFrame(
-            map: map,
+            depth: output.depth,
+            width: output.width,
+            height: output.height,
             cameraIntrinsics: intrinsics,
             imageResolution: imageResolution,
             timestamp: timestamp,

@@ -75,10 +75,19 @@ final class Metric3DDepthEstimator {
             // Keep the AR main loop responsive: bounded intra-op parallelism,
             // no inter-op parallelism (single graph, sequential).
             try opts.setIntraOpNumThreads(2)
-            try opts.setGraphOptimizationLevel(.all)
+            // .basic only. The extended-level SimplifiedLayerNormFusion crashes
+            // session init on this model — it dangles a node_arg reference to the
+            // f32io wrapper's InsertedPrecisionFreeCast nodes (ORT graph_utils
+            // GetIndexFromName assert). .basic skips that fusion.
+            try opts.setGraphOptimizationLevel(.basic)
             session = try ORTSession(env: env, modelPath: url.path, sessionOptions: opts)
         } catch {
-            throw EstimatorError.sessionFailed(String(describing: error))
+            // Surface ORT's raw NSError (domain/code/message) so a missing op
+            // kernel or graph issue is diagnosable from the device console.
+            let ns = error as NSError
+            throw EstimatorError.sessionFailed(
+                "\(ns.domain) code=\(ns.code): \(ns.localizedDescription)"
+            )
         }
         ciContext = CIContext(options: [.cacheIntermediates: false])
     }

@@ -46,14 +46,15 @@ struct ContentView: View {
 
             let newAdapter = PerceptionToBehaviorAdapter(behavior: behavior)
             newAdapter.debugLog = debugLog
-            newAdapter.attach(to: perception.perceivedObjects)
+            // Wire behavior to perception through the PerceivedObjectSource port.
+            newAdapter.attach(to: perception as PerceivedObjectSource)
             behavior.start()
 
             stateLog = behavior.currentStatePublisher.sink { [debugLog] state in
                 debugLog.log(.behavior, "state → \(state.rawValue)")
             }
 
-            overlayBridge = perception.perceivedObjects
+            overlayBridge = perception.perceivedObjectsPublisher
                 .receive(on: DispatchQueue.main)
                 .sink { [overlayStore] object in
                     overlayStore.ingest(object)
