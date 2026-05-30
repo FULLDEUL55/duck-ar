@@ -129,6 +129,8 @@ final class PerceptionCoordinator: NSObject, ARSessionDelegate, PerceivedObjectS
             debugLog?.log(.system, "✅ Metric3D ViT-Small (ONNX Runtime) loaded")
         } catch Metric3DDepthEstimator.EstimatorError.modelMissing {
             debugLog?.log(.system, "ℹ metric3d_vit_small_f32io.onnx not bundled — depth pipeline idle")
+        } catch Metric3DDepthEstimator.EstimatorError.sessionFailed(let message) {
+            debugLog?.log(.system, "⚠ Metric3D ORT session failed: \(message)")
         } catch {
             debugLog?.log(.system, "⚠ Failed to load Metric3D: \(error)")
         }

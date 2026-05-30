@@ -34,6 +34,9 @@ final class DebugLogStore: ObservableObject {
     @Published private(set) var lines: [LogLine] = []
 
     nonisolated func log(_ level: Level, _ message: String) {
+        // Mirror to stderr (NSLog) so on-device runs are inspectable via
+        // `devicectl device process launch --console` without an Xcode debugger.
+        NSLog("DuckAR[%@] %@", level.rawValue, message)
         let entry = LogLine(
             timestamp: Date().timeIntervalSinceReferenceDate,
             level: level,
