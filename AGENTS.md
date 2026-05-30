@@ -44,6 +44,37 @@
 
 ---
 
+## 2-1. Clean Architecture (Swift 번역)
+
+> L2 단일 진실: [`../docs/clean_architecture_standard.md`](../docs/clean_architecture_standard.md). 원칙 상속, Swift/ARKit idiom 으로 번역. **교조적 계층 폴더 강제 금지** — 원칙이 목적.
+
+**의존성 방향** (안쪽으로만 흐른다):
+
+```
+[ Behavior ]   순수 도메인: 상태머신 (DuckState, DuckBehaviorCoordinator,
+               BehaviorMappingTable). ARKit/RealityKit/Vision 의존 0.
+   ▲
+[ Perception 도메인 모델 ]  PerceivedObject, DepthFrame — 인지 결과 값 타입.
+               simd/CoreML/CoreGraphics 만. 순수.
+   ▲
+[ Adapters ]   PerceptionToBehaviorAdapter (인지→행동), PerceivedObjectSource (port)
+   ▲
+[ Infrastructure ]  PerceptionCoordinator (ARSession·Vision), Metric3DDepthEstimator
+               (ONNX), Scene/* (RealityKit ECS·anchor·mesh). 가장 바깥.
+```
+
+**경계 규칙**:
+- **ARKit/RealityKit/Vision 타입이 Behavior·Perception 도메인 시그니처에 새지 않는다.** `ARFrame`, `ARView`, `VNObservation`, `Entity` 는 infrastructure 안에 가둔다.
+- `PerceptionCoordinator` 는 **inbound adapter**: 원시 ARKit/Vision 결과를 도메인 모델(`PerceivedObject`/`DepthFrame`)로 번역해 Combine publisher 로 발행. 도메인 모델 정의는 별도 파일(`Perception/PerceivedObject.swift`, `Perception/DepthFrame.swift`)에 두어 프레임워크 import 와 격리.
+- `duck-behavior` 는 `PerceivedObjectSource` (port) 또는 도메인 모델 스트림에만 의존. 인지 백엔드(YOLO·Metric3D)를 교체해도 행동 로직 무변.
+- `Metric3DDepthEstimator` (ONNX Runtime vendored) 는 어댑터로 감싸고, 외부는 도메인 `DepthFrame` 만 본다.
+- **예외 (실용주의)**: `PlaneAnchorEvent` 는 `ARPlaneAnchor` 를 노출하나, 유일 소비자 `PlaneVisualizer` 가 RealityKit infra 라 도메인 래핑이 value-free passthrough → 의도적 비포장. infra↔infra 는 허용.
+- **simd 는 프레임워크가 아니다**: 도메인이 `SIMD3<Float>`/`simd_float4x4` 를 쓰는 것은 누수가 아님 (수학 값 타입).
+
+**리팩토링 우선순위** (L2 §5): 도메인 추출 → 경계 port → 어댑터 정리 → 각 단계 빌드 검증. 동작 보존 1순위.
+
+---
+
 ## 3. 개발 프로세스 (Phase 1: Semantic Demo)
 
 1. Xcode 프로젝트 셋업 (`code/DuckAR.xcodeproj`) + iPad Air 5 실기 빌드 확인
