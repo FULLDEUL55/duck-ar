@@ -118,7 +118,7 @@ final class PerceptionToBehaviorAdapter {
             format: "saw %@ cls=%@ conf=%.2f",
             object.type, furniture.rawValue, window.confidenceMax
         )
-        print(String(
+        debugLog?.log(.behavior, String(
             format: "🦆 → walking @ (%.2f, %.2f, %.2f) (%@)",
             position.x, position.y, position.z, reason
         ))

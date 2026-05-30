@@ -54,7 +54,7 @@ struct ContentView: View {
                 debugLog.log(.behavior, "state → \(state.rawValue)")
             }
 
-            overlayBridge = perception.perceivedObjects
+            overlayBridge = perception.perceivedObjectsPublisher
                 .receive(on: DispatchQueue.main)
                 .sink { [overlayStore] object in
                     overlayStore.ingest(object)

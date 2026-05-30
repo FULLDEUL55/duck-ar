@@ -336,16 +336,10 @@ final class PerceptionCoordinator: NSObject, ARSessionDelegate, PerceivedObjectS
             return
         }
 
-        guard let map = try? MLMultiArray(
-            shape: [NSNumber(value: output.height), NSNumber(value: output.width)],
-            dataType: .float32
-        ) else { return }
-        output.depth.withUnsafeBytes { src in
-            memcpy(map.dataPointer, src.baseAddress!, output.depth.count * MemoryLayout<Float>.size)
-        }
-
         let frame = DepthFrame(
-            map: map,
+            depth: output.depth,
+            width: output.width,
+            height: output.height,
             cameraIntrinsics: intrinsics,
             imageResolution: imageResolution,
             timestamp: timestamp,
