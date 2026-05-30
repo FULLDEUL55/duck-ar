@@ -23,11 +23,19 @@ final class DuckEntityCoordinator {
     private static let usdzName = "duck"
     private static let minimumPlaneBounds = SIMD2<Float>(0.3, 0.3)
 
+    // If no qualifying horizontal plane anchors within this window, place the
+    // duck ahead of the camera so it always appears (chairs/sofas/walls alone
+    // never yield a floor plane on a LiDAR-less iPad).
+    private static let planeWaitTimeout: TimeInterval = 2.5
+
     private var planeAnchor: AnchorEntity?
     private var worldAnchor: AnchorEntity?
     private var duckEntity: Entity?
     private var updateSubscription: Cancellable?
     private var isPlaced = false
+    // Set once the duck is reparented to a world anchor and handed to the
+    // navigator — guards the plane-ready path and the fallback from racing.
+    private var hasHandedOff = false
 
     private let navigator = DuckNavigator()
     private let depthField = DepthNavigationField()
@@ -60,7 +68,43 @@ final class DuckEntityCoordinator {
 
         Task { @MainActor in
             await loadDuck(into: anchor, arView: arView, behavior: behavior)
+            scheduleFallbackPlacement(arView: arView, behavior: behavior)
         }
+    }
+
+    // No qualifying horizontal plane after the timeout → place the duck in
+    // front of the camera so it is always visible and the navigator always runs.
+    private func scheduleFallbackPlacement(
+        arView: ARView,
+        behavior: DuckBehaviorCoordinator
+    ) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(Self.planeWaitTimeout * 1_000_000_000))
+            guard !hasHandedOff, let entity = duckEntity else { return }
+            let pos = fallbackWorldPosition(arView: arView)
+            debugLog?.log(.system, String(
+                format: "🦆 no plane in %.1fs — fallback placement @ (%.2f, %.2f, %.2f)",
+                Self.planeWaitTimeout, pos.x, pos.y, pos.z
+            ))
+            reparentAndHandoff(arView: arView, planeAnchor: planeAnchor, worldPos: pos, entity: entity, behavior: behavior)
+        }
+    }
+
+    // Screen-center raycast against an estimated plane (any alignment); falls
+    // back to a point ~1.2 m ahead of the camera dropped below eye level.
+    private func fallbackWorldPosition(arView: ARView) -> SIMD3<Float> {
+        let center = CGPoint(x: arView.bounds.midX, y: arView.bounds.midY)
+        if let query = arView.makeRaycastQuery(from: center, allowing: .estimatedPlane, alignment: .any),
+           let hit = arView.session.raycast(query).first {
+            let c = hit.worldTransform.columns.3
+            return SIMD3<Float>(c.x, c.y, c.z)
+        }
+        let cam = arView.cameraTransform.matrix
+        let forward = -SIMD3<Float>(cam.columns.2.x, cam.columns.2.y, cam.columns.2.z)
+        let camPos = SIMD3<Float>(cam.columns.3.x, cam.columns.3.y, cam.columns.3.z)
+        var p = camPos + normalize(forward) * 1.2
+        p.y -= 0.4
+        return p
     }
 
     private func loadDuck(
@@ -117,10 +161,16 @@ final class DuckEntityCoordinator {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                guard planeAnchor.isAnchored else { return }
-                self.handoffToNavigator(
+                guard !self.hasHandedOff, planeAnchor.isAnchored else { return }
+                let worldPos = entity.position(relativeTo: nil)
+                self.debugLog?.log(.system, String(
+                    format: "🦆 placed on plane @ (%.2f, %.2f, %.2f)",
+                    worldPos.x, worldPos.y, worldPos.z
+                ))
+                self.reparentAndHandoff(
                     arView: arView,
                     planeAnchor: planeAnchor,
+                    worldPos: worldPos,
                     entity: entity,
                     behavior: behavior
                 )
@@ -130,13 +180,17 @@ final class DuckEntityCoordinator {
         }
     }
 
-    private func handoffToNavigator(
+    private func reparentAndHandoff(
         arView: ARView,
-        planeAnchor: AnchorEntity,
+        planeAnchor: AnchorEntity?,
+        worldPos: SIMD3<Float>,
         entity: Entity,
         behavior: DuckBehaviorCoordinator
     ) {
-        let worldPos = entity.position(relativeTo: nil)
+        guard !hasHandedOff else { return }
+        hasHandedOff = true
+        updateSubscription?.cancel()
+        updateSubscription = nil
 
         // Initial yaw faces the camera so the duck doesn't spawn looking away.
         // Match navigator's mesh-forward correction so the body & nav agree.
@@ -155,7 +209,7 @@ final class DuckEntityCoordinator {
         entity.position = SIMD3<Float>(0, 0, 0)
         entity.orientation = simd_quatf()
 
-        planeAnchor.removeFromParent()
+        planeAnchor?.removeFromParent()
         self.planeAnchor = nil
         self.worldAnchor = worldAnchor
 
